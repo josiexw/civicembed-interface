@@ -412,26 +412,35 @@ export default function SwitzerlandMap() {
 
   // Load parquet data for lens coloring
   const loadParquetData = async (lensType: string) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const rect = canvas.getBoundingClientRect()
+    const viewBounds = {
+      north: center.lat + (SWITZERLAND_BOUNDS.north - SWITZERLAND_BOUNDS.south) / (2 * Math.pow(2, zoom - 8)),
+      south: center.lat - (SWITZERLAND_BOUNDS.north - SWITZERLAND_BOUNDS.south) / (2 * Math.pow(2, zoom - 8)),
+      east: center.lng + (SWITZERLAND_BOUNDS.east - SWITZERLAND_BOUNDS.west) / (2 * Math.pow(2, zoom - 8)),
+      west: center.lng - (SWITZERLAND_BOUNDS.east - SWITZERLAND_BOUNDS.west) / (2 * Math.pow(2, zoom - 8)),
+    }
+
     try {
-      const response = await fetch(`/api/parquet?lens=${lensType.toLowerCase()}`)
-      if (!response.ok) {
-        throw new Error("Failed to load parquet data")
-      }
+      const response = await fetch(
+        `/api/parquet?lens=${lensType.toLowerCase()}&minLat=${viewBounds.south}&maxLat=${viewBounds.north}&minLon=${viewBounds.west}&maxLon=${viewBounds.east}`
+      )
+
+      if (!response.ok) throw new Error("Failed to load parquet data")
 
       const data = await response.json()
 
-      // Process the parquet data and calculate PCA similarities
-      // This is where you'd integrate with your actual parquet processing
       const processedGridData: GridCell[] = data.coordinates.map((coord: any, index: number) => ({
         lat: coord.lat,
-        lng: coord.lng,
-        similarity: data.similarities ? data.similarities[index] : Math.random(), // Use actual similarity or fallback
+        lng: coord.lon, // NOTE: changed from `coord.lng` in case backend uses `lon`
+        similarity: data.similarities?.[index] ?? Math.random(),
       }))
 
       setGridData(processedGridData)
     } catch (error) {
       console.error("Failed to load parquet data:", error)
-      // Fallback to mock data
       generateMockGridData()
     }
   }
@@ -458,13 +467,16 @@ export default function SwitzerlandMap() {
     setGridData(mockGridData)
   }
 
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   useEffect(() => {
-    if (lens !== "No lens selected") {
-      loadParquetData(lens)
-    } else {
+    if (lens === "No lens selected") {
       setGridData([])
+      return
     }
-  }, [lens])
+
+    if (timeoutRef.current) clearTimeout(timeoutRef.current)
+    timeoutRef.current = setTimeout(() => loadParquetData(lens), 200)
+  }, [lens, center, zoom])
 
   // Redraw when data changes
   useEffect(() => {
