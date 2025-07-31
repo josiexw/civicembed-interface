@@ -56,7 +56,7 @@ export const colormaps = {
     const r = Math.round(255 * (1 - value * 0.7))
     const g = Math.round(255 * (1 - value * 0.3))
     const b = Math.round(255 * (0.4 + value * 0.6))
-    return `rgba(${r}, ${g}, ${b}, 0.5)`
+    return `rgba(${r}, ${g}, ${b}, 0.3)`
   },
   summer_r: (value: number) => {
     let r, g, b
@@ -81,25 +81,44 @@ export const colormaps = {
       b = 0
     }
 
-    return `rgba(${r}, ${g}, ${b}, 0.5)`
+    return `rgba(${r}, ${g}, ${b}, 0.3)`
   },
   plasma: (value: number) => {
-    const r = Math.round(255 * (0.2 + value * 0.8))
-    const g = Math.round(255 * value * 0.7)
-    const b = Math.round(255 * (0.8 - value * 0.3))
-    return `rgba(${r}, ${g}, ${b}, 0.5)`
+    let r, g, b
+
+    if (value <= 0.33) {
+      // Orange to Pink
+      const t = value / 0.33
+      r = Math.round(255)
+      g = Math.round(165 + t * (105 - 165))  // 165 → 105
+      b = Math.round(0 + t * (180 - 0))      // 0 → 180
+    } else if (value <= 0.66) {
+      // Pink to Purple
+      const t = (value - 0.33) / 0.33
+      r = Math.round(255 - t * (255 - 128))  // 255 → 128
+      g = Math.round(105 - t * 105)          // 105 → 0
+      b = Math.round(180 - t * (180 - 128))  // 180 → 128
+    } else {
+      // Purple to Blue
+      const t = (value - 0.66) / 0.34
+      r = Math.round(128 - t * 128)          // 128 → 0
+      g = 0
+      b = Math.round(128 + t * (255 - 128))  // 128 → 255
+    }
+
+    return `rgba(${r}, ${g}, ${b}, 0.3)`
   },
   seismic: (value: number) => {
     if (value < 0.5) {
       const r = Math.round(255 * (1 - 2 * value))
       const g = Math.round(255 * (1 - 2 * value))
       const b = 255
-      return `rgba(${r}, ${g}, ${b}, 0.5)`
+      return `rgba(${r}, ${g}, ${b}, 0.3)`
     } else {
       const r = 255
       const g = Math.round(255 * (2 - 2 * value))
       const b = Math.round(255 * (2 - 2 * value))
-      return `rgba(${r}, ${g}, ${b}, 0.5)`
+      return `rgba(${r}, ${g}, ${b}, 0.3)`
     }
   },
 }

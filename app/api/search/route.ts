@@ -11,11 +11,11 @@ interface BoundingBox {
   south: number
   east: number
   west: number
-}
+} 
 
 interface SearchResponse {
   boundingBox: BoundingBox
-  topKCells: { lat: number; lng: number }[]
+  topKCells: BoundingBox[]
 }
 
 export async function POST(request: NextRequest) {

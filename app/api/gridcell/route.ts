@@ -8,6 +8,14 @@ interface GridCellData {
   similarities: number[]
 }
 
+function percentile(sorted: number[], p: number): number {
+  const idx = (p / 100) * (sorted.length - 1)
+  const lower = Math.floor(idx)
+  const upper = Math.ceil(idx)
+  if (lower === upper) return sorted[lower]
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (idx - lower)
+}
+
 async function readArrowFileWithBBox(
   filename: string,
   bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number }
@@ -45,13 +53,15 @@ async function readArrowFileWithBBox(
     similarities.push(sim)
   })
 
-  // Normalize similarities between 0 and 1
-  const simMin = Math.min(...similarities)
-  const simMax = Math.max(...similarities)
-  const normalizedSimilarities =
-    simMax === simMin
-      ? similarities.map(() => 0.5)
-      : similarities.map((s) => (s - simMin) / (simMax - simMin))
+  // Normalize similarities between 0 and 1 with outlier clipping
+  const sorted = [...similarities].sort((a, b) => a - b)
+  const lowerBound = percentile(sorted, 1)
+  const upperBound = percentile(sorted, 99)
+
+  const normalizedSimilarities = similarities.map((s) => {
+    const clipped = Math.min(Math.max(s, lowerBound), upperBound)
+    return (clipped - lowerBound) / (upperBound - lowerBound)
+  })
 
   return { coordinates, similarities: normalizedSimilarities }
 }

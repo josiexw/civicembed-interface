@@ -33,14 +33,14 @@ interface BoundingBox {
 
 interface BackendResponse {
   boundingBox: BoundingBox
-  topKCells: { lat: number; lng: number }[]
+  topKCells: BoundingBox[]
 }
 
 export default function SwitzerlandMap() {
   const [location, setLocation] = useState("")
   const [topK, setTopK] = useState("")
   const [lens, setLens] = useState("No lens selected")
-  const [highlightedCells, setHighlightedCells] = useState<{ lat: number; lng: number }[]>([])
+  const [highlightedCells, setHighlightedCells] = useState<BoundingBox[]>([])
   const [boundingBox, setBoundingBox] = useState<BoundingBox | null>(null)
   const [gridData, setGridData] = useState<GridCell[]>([])
   const [loading, setLoading] = useState(false)
@@ -49,6 +49,7 @@ export default function SwitzerlandMap() {
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, lat: 0, lng: 0 })
   const [loadedTiles, setLoadedTiles] = useState<Map<string, HTMLImageElement>>(new Map())
+  const [lensLoading, setLensLoading] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -209,7 +210,13 @@ export default function SwitzerlandMap() {
       // Only draw grid if lens is selected or cell is highlighted
       if (
         lens !== "No lens selected" ||
-        highlightedCells.some((hCell) => Math.abs(hCell.lat - cell.lat) < 0.01 && Math.abs(hCell.lng - cell.lng) < 0.01)
+        highlightedCells.some(
+          (box) =>
+            cell.lat >= box.south &&
+            cell.lat <= box.north &&
+            cell.lng >= box.west &&
+            cell.lng <= box.east
+        )
       ) {
         ctx.fillStyle = cellColor
         ctx.fillRect(topLeft.x, topLeft.y, width, height)
@@ -232,11 +239,9 @@ export default function SwitzerlandMap() {
     if (highlightedCells.length > 0) {
       const cellSizeMeters = getCellSizeMetersForZoom(zoom)
 
-      highlightedCells.forEach((cell) => {
-        const { latDegrees, lngDegrees } = metersToDegreesAtLat(cellSizeMeters, cell.lat)
-
-        const topLeft = latLngToPixel(cell.lat + latDegrees / 2, cell.lng - lngDegrees / 2, viewBounds, mapWidth, mapHeight)
-        const bottomRight = latLngToPixel(cell.lat - latDegrees / 2, cell.lng + lngDegrees / 2, viewBounds, mapWidth, mapHeight)
+      highlightedCells.forEach((box) => {
+        const topLeft = latLngToPixel(box.north, box.west, viewBounds, mapWidth, mapHeight)
+        const bottomRight = latLngToPixel(box.south, box.east, viewBounds, mapWidth, mapHeight)
 
         ctx.strokeStyle = "red"
         ctx.lineWidth = 2
@@ -393,6 +398,7 @@ export default function SwitzerlandMap() {
 
   // Load grid data for lens coloring
   const loadGridData = async (lensType: string) => {
+    setLensLoading(true)
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -422,6 +428,8 @@ export default function SwitzerlandMap() {
       setGridData(processedGridData)
     } catch (error) {
       console.error("Failed to load gridcell data:", error)
+    } finally {
+      setLensLoading(false)
     }
   }
 
@@ -504,7 +512,7 @@ export default function SwitzerlandMap() {
       </Card>
 
       {/* Map container */}
-      <div className="flex items-center justify-center w-screen h-screen" ref={containerRef}>
+      <div className="flex items-center justify-center w-screen h-screen relative" ref={containerRef}>
         <canvas
           ref={canvasRef}
           className="w-3/4 h-full border border-gray-300 cursor-move"
@@ -515,6 +523,11 @@ export default function SwitzerlandMap() {
           onWheel={handleWheel}
           style={{ cursor: isDragging ? "grabbing" : "grab" }}
         />
+        {lensLoading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/60 z-10">
+            <div className="animate-spin rounded-full h-10 w-10 border-t-4 border-blue-500" />
+          </div>
+        )}
       </div>
 
       {/* Legend */}
@@ -541,7 +554,7 @@ export default function SwitzerlandMap() {
                     : lens === "Vegetation"
                     ? "from-yellow-300 to-green-700"
                     : lens === "Topography"
-                    ? "from-purple-400 to-orange-500"
+                    ? "from-purple-700 to-yellow-500"
                     : lens === "Road Network"
                     ? "from-blue-400 to-red-600"
                     : "from-gray-300 to-gray-500"
@@ -550,7 +563,8 @@ export default function SwitzerlandMap() {
               <span>{lens} Similarity</span>
             </div>
           )}
-          <div className="text-xs text-gray-500">Zoom: {zoom} | Drag to pan, scroll to zoom</div>
+          <div className="flex items-center text-xs text-gray-500">Zoom: {zoom} | Drag to pan, scroll to zoom</div>
+          <div className="flex items-center text-xs text-gray-500">Note: Data for grid cells outside of Switzerland are not accurate</div>
         </div>
       </Card>
     </div>
