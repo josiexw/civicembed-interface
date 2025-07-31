@@ -3,17 +3,16 @@ import { tableFromIPC } from "apache-arrow"
 import fs from "fs/promises"
 import path from "path"
 
-interface ParquetData {
+interface GridCellData {
   coordinates: { lat: number; lon: number }[]
   similarities: number[]
 }
 
 async function readArrowFileWithBBox(
   filename: string,
-  bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number },
-  maxSamples: number
-): Promise<ParquetData> {
-  const filePath = path.join(process.cwd(), "app/api/parquet", filename)
+  bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number }
+): Promise<GridCellData> {
+  const filePath = path.join(process.cwd(), "app/api/gridcell", filename)
   const buffer = await fs.readFile(filePath)
   const table = tableFromIPC(buffer)
 
@@ -21,34 +20,40 @@ async function readArrowFileWithBBox(
   const lon = table.getChild("lon")!.toArray()
   const sim = table.getChild("similarity")!.toArray()
 
-  const coordinates: { lat: number; lon: number }[] = []
-  const similarities: number[] = []
+  const binSize = 0.01 // ~1km in degrees
+
+  const binMap = new Map<string, { lat: number; lon: number; sim: number }>()
 
   for (let i = 0; i < lat.length; i++) {
     const la = lat[i]
     const lo = lon[i]
+    const s = sim[i]
 
     if (la >= bounds.minLat && la <= bounds.maxLat && lo >= bounds.minLon && lo <= bounds.maxLon) {
-      coordinates.push({ lat: la, lon: lo })
-      similarities.push(sim[i])
+      const binKey = `${Math.floor(la / binSize)}_${Math.floor(lo / binSize)}`
+      if (!binMap.has(binKey)) {
+        binMap.set(binKey, { lat: la, lon: lo, sim: s })
+      }
     }
   }
 
-  // Optional: downsample if too many points
-  if (coordinates.length > maxSamples) {
-    const step = Math.ceil(coordinates.length / maxSamples)
-    const sampledCoordinates = []
-    const sampledSimilarities = []
+  const coordinates: { lat: number; lon: number }[] = []
+  const similarities: number[] = []
 
-    for (let i = 0; i < coordinates.length; i += step) {
-      sampledCoordinates.push(coordinates[i])
-      sampledSimilarities.push(similarities[i])
-    }
+  Array.from(binMap.values()).forEach(({ lat, lon, sim }) => {
+    coordinates.push({ lat, lon })
+    similarities.push(sim)
+  })
 
-    return { coordinates: sampledCoordinates, similarities: sampledSimilarities }
-  }
+  // Normalize similarities between 0 and 1
+  const simMin = Math.min(...similarities)
+  const simMax = Math.max(...similarities)
+  const normalizedSimilarities =
+    simMax === simMin
+      ? similarities.map(() => 0.5)
+      : similarities.map((s) => (s - simMin) / (simMax - simMin))
 
-  return { coordinates, similarities }
+  return { coordinates, similarities: normalizedSimilarities }
 }
 
 export async function GET(request: NextRequest) {
@@ -64,26 +69,26 @@ export async function GET(request: NextRequest) {
     const bounds = { minLat, maxLat, minLon, maxLon }
 
     const fileMap: Record<string, string | null> = {
-      topography: "all_terrain_embeddings.arrow",
-      water: "all_water_embeddings.arrow",
+      topography: "topography.arrow",
+      water: "water.arrow",
       roads: null,
-      vegetation: null,
+      vegetation: "vegetation.arrow",
     }
 
     const filename = fileMap[lens ?? ""] ?? null
 
-    let data: ParquetData
+    let data: GridCellData
 
     if (filename) {
-      const parquetPath = path.join(process.cwd(), "app/api/parquet", filename)
+      const gridcellPath = path.join(process.cwd(), "app/api/gridcell", filename)
 
       try {
-        await fs.access(parquetPath)
+        await fs.access(gridcellPath)
       } catch {
         return NextResponse.json({ error: "File not found" }, { status: 404 })
       }
 
-      data = await readArrowFileWithBBox(filename, bounds, 5000)
+      data = await readArrowFileWithBBox(filename, bounds)
     } else {
       data = {
         coordinates: Array.from({ length: 1000 }, () => ({
@@ -96,7 +101,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(data)
   } catch (error) {
-    console.error("Parquet API error:", error)
-    return NextResponse.json({ error: "Failed to load parquet data" }, { status: 500 })
+    console.error("gridcell API error:", error)
+    return NextResponse.json({ error: "Failed to load gridcell data" }, { status: 500 })
   }
 }

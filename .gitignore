@@ -15,6 +15,7 @@
 
 # production
 /build
+*.arrow
 
 # misc
 .DS_Store
