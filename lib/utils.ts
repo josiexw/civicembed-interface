@@ -5,13 +5,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// === Switzerland Constants ===
 export const SWITZERLAND_BOUNDS = {
   north: 47.8084,
   south: 45.818,
   east: 10.4922,
   west: 5.9559,
 }
+
+export const lensOptions = [
+  { value: "water", label: "Water" },
+  { value: "vegetation", label: "Vegetation" },
+  { value: "topography", label: "Topography" },
+  { value: "roads", label: "Road Network" },
+]
 
 // === Grid Helpers ===
 export function metersToDegreesAtLat(meters: number, lat: number) {
@@ -52,30 +58,30 @@ export function latLngToPixel(lat: number, lng: number, bounds: any, width: numb
 
 // === Colormaps ===
 export const colormaps = {
-  cividis_r: (value: number) => {
-    const r = Math.round(255 * (1 - value * 0.7))
-    const g = Math.round(255 * (1 - value * 0.3))
-    const b = Math.round(255 * (0.4 + value * 0.6))
+  cividis: (value: number) => {
+    const r = Math.round(255 * value)
+    const g = Math.round(255 * value)
+    const b = Math.round(255 * (1 - value))
     return `rgba(${r}, ${g}, ${b}, 0.3)`
   },
   summer_r: (value: number) => {
     let r, g, b
 
-    if (value <= 0.5) {
+    if (value <= 0.33) {
       // Orange (255, 165, 0) → Yellow (255, 255, 0)
       const t = value / 0.5
       r = 255
       g = Math.round(165 + t * (255 - 165))
       b = 0
-    } else if (value <= 0.75) {
+    } else if (value <= 0.66) {
       // Yellow (255, 255, 0) → Green (0, 255, 0)
-      const t = (value - 0.5) / 0.25
+      const t = (value - 0.33) / 0.33
       r = Math.round(255 * (1 - t))
       g = 255
       b = 0
     } else {
       // Green (0, 255, 0) → Dark Green (0, 100, 0)
-      const t = (value - 0.75) / 0.25
+      const t = (value - 0.66) / 0.33
       r = 0
       g = Math.round(255 - t * (255 - 100))
       b = 0
@@ -121,4 +127,35 @@ export const colormaps = {
       return `rgba(${r}, ${g}, ${b}, 0.3)`
     }
   },
+  viridis: (value: number) => {
+    let r, g, b
+
+    if (value <= 0.25) {
+      // Yellow (255, 255, 0) → Green (0, 255, 0)
+      const t = value / 0.25
+      r = Math.round(255 * (1 - t))
+      g = 255
+      b = 0
+    } else if (value <= 0.5) {
+      // Green (0, 255, 0) → Blue (0, 0, 255)
+      const t = (value - 0.25) / 0.25
+      r = 0
+      g = Math.round(255 * (1 - t))
+      b = Math.round(255 * t)
+    } else if (value <= 0.75) {
+      // Blue (0, 0, 255) → Indigo (75, 0, 130)
+      const t = (value - 0.5) / 0.25
+      r = Math.round(75 * t)
+      g = 0
+      b = Math.round(255 - t * (255 - 130))
+    } else {
+      // Indigo (75, 0, 130) → Purple (128, 0, 128)
+      const t = (value - 0.75) / 0.25
+      r = Math.round(75 + t * (128 - 75))
+      g = 0
+      b = Math.round(130 + t * (128 - 130))
+    }
+
+    return `rgba(${r}, ${g}, ${b}, 0.3)`
+  }
 }

@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server"
 interface SearchRequest {
   location: string
   topK: number
-  lens: string
+  lens: string[]
 }
 
 interface BoundingBox {
@@ -11,16 +11,19 @@ interface BoundingBox {
   south: number
   east: number
   west: number
-} 
+}
 
 interface SearchResponse {
   boundingBox: BoundingBox
   topKCells: BoundingBox[]
+  similarities: number[]
+  lensSimilarity: Record<string, number>[]  // one per topK cell
 }
 
 export async function POST(request: NextRequest) {
   try {
     const { location, topK, lens }: SearchRequest = await request.json()
+
     const backendResponse = await fetch("http://localhost:5000/api/search", {
       method: "POST",
       headers: {
@@ -34,7 +37,17 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await backendResponse.json()
-    return NextResponse.json(data)
+
+    const { boundingBox, topKCells, similarities, lensSimilarity } = data
+
+    const response: SearchResponse = {
+      boundingBox,
+      topKCells,
+      similarities: similarities ?? topKCells.map(() => 0),
+      lensSimilarity: lensSimilarity ?? topKCells.map(() => ({})),
+    }
+
+    return NextResponse.json(response)
   } catch (error) {
     console.error("Search API error:", error)
     return NextResponse.json({ error: "Failed to process search request" }, { status: 500 })

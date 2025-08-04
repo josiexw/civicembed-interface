@@ -1,5 +1,5 @@
 export const colormaps = {
-  cividis_r: (value: number): string => {
+  cividis: (value: number): string => {
     // Reversed cividis colormap - dark blue to yellow
     const clampedValue = Math.max(0, Math.min(1, value))
     const reversed = 1 - clampedValue

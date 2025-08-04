@@ -3,6 +3,12 @@ import { tableFromIPC } from "apache-arrow"
 import fs from "fs/promises"
 import path from "path"
 
+interface GridCell {
+  lat: number
+  lon: number
+  sim: number
+}
+
 interface GridCellData {
   coordinates: { lat: number; lon: number }[]
   similarities: number[]
@@ -18,8 +24,9 @@ function percentile(sorted: number[], p: number): number {
 
 async function readArrowFileWithBBox(
   filename: string,
-  bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number }
-): Promise<GridCellData> {
+  bounds: { minLat: number; maxLat: number; minLon: number; maxLon: number },
+  binSize = 0.01
+): Promise<Map<string, GridCell>> {
   const filePath = path.join(process.cwd(), "app/api/gridcell", filename)
   const buffer = await fs.readFile(filePath)
   const table = tableFromIPC(buffer)
@@ -28,9 +35,7 @@ async function readArrowFileWithBBox(
   const lon = table.getChild("lon")!.toArray()
   const sim = table.getChild("similarity")!.toArray()
 
-  const binSize = 0.01 // ~1km in degrees
-
-  const binMap = new Map<string, { lat: number; lon: number; sim: number }>()
+  const binMap = new Map<string, GridCell>()
 
   for (let i = 0; i < lat.length; i++) {
     const la = lat[i]
@@ -41,35 +46,24 @@ async function readArrowFileWithBBox(
       const binKey = `${Math.floor(la / binSize)}_${Math.floor(lo / binSize)}`
       if (!binMap.has(binKey)) {
         binMap.set(binKey, { lat: la, lon: lo, sim: s })
+      } else {
+        const prev = binMap.get(binKey)!
+        binMap.set(binKey, {
+          lat: (prev.lat + la) / 2,
+          lon: (prev.lon + lo) / 2,
+          sim: (prev.sim + s) / 2,
+        })
       }
     }
   }
 
-  const coordinates: { lat: number; lon: number }[] = []
-  const similarities: number[] = []
-
-  Array.from(binMap.values()).forEach(({ lat, lon, sim }) => {
-    coordinates.push({ lat, lon })
-    similarities.push(sim)
-  })
-
-  // Normalize similarities between 0 and 1 with outlier clipping
-  const sorted = [...similarities].sort((a, b) => a - b)
-  const lowerBound = percentile(sorted, 1)
-  const upperBound = percentile(sorted, 99)
-
-  const normalizedSimilarities = similarities.map((s) => {
-    const clipped = Math.min(Math.max(s, lowerBound), upperBound)
-    return (clipped - lowerBound) / (upperBound - lowerBound)
-  })
-
-  return { coordinates, similarities: normalizedSimilarities }
+  return binMap
 }
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
-    const lens = searchParams.get("lens")
+    const lenses = searchParams.getAll("lens")
 
     const minLat = parseFloat(searchParams.get("minLat") ?? "45.8")
     const maxLat = parseFloat(searchParams.get("maxLat") ?? "47.8")
@@ -85,31 +79,50 @@ export async function GET(request: NextRequest) {
       vegetation: "vegetation.arrow",
     }
 
-    const filename = fileMap[lens ?? ""] ?? null
+    const validFilenames = lenses
+      .map((l) => fileMap[l.toLowerCase()] ?? null)
+      .filter((f): f is string => f !== null)
 
-    let data: GridCellData
+    if (validFilenames.length === 0) {
+      return NextResponse.json({ error: "No valid lenses" }, { status: 400 })
+    }
 
-    if (filename) {
-      const gridcellPath = path.join(process.cwd(), "app/api/gridcell", filename)
-
-      try {
-        await fs.access(gridcellPath)
-      } catch {
-        return NextResponse.json({ error: "File not found" }, { status: 404 })
-      }
-
-      data = await readArrowFileWithBBox(filename, bounds)
-    } else {
-      data = {
-        coordinates: Array.from({ length: 1000 }, () => ({
-          lat: 45.8 + Math.random() * 2,
-          lon: 5.9 + Math.random() * 4.5,
-        })),
-        similarities: Array.from({ length: 1000 }, () => Math.random()),
+    const combinedMap = new Map<string, GridCell>()
+    for (const filename of validFilenames) {
+      const map = await readArrowFileWithBBox(filename, bounds)
+      for (const [key, cell] of map.entries()) {
+        if (!combinedMap.has(key)) {
+          combinedMap.set(key, cell)
+        } else {
+          const prev = combinedMap.get(key)!
+          combinedMap.set(key, {
+            lat: (prev.lat + cell.lat) / 2,
+            lon: (prev.lon + cell.lon) / 2,
+            sim: (prev.sim + cell.sim) / 2,
+          })
+        }
       }
     }
 
-    return NextResponse.json(data)
+    const coordinates: { lat: number; lon: number }[] = []
+    const similarities: number[] = []
+
+    Array.from(combinedMap.values()).forEach(({ lat, lon, sim }) => {
+      coordinates.push({ lat, lon })
+      similarities.push(sim)
+    })
+
+    // Normalize similarities with clipping
+    const sorted = [...similarities].sort((a, b) => a - b)
+    const lowerBound = percentile(sorted, 1)
+    const upperBound = percentile(sorted, 99)
+
+    const normalizedSimilarities = similarities.map((s) => {
+      const clipped = Math.min(Math.max(s, lowerBound), upperBound)
+      return (clipped - lowerBound) / (upperBound - lowerBound)
+    })
+
+    return NextResponse.json({ coordinates, similarities: normalizedSimilarities })
   } catch (error) {
     console.error("gridcell API error:", error)
     return NextResponse.json({ error: "Failed to load gridcell data" }, { status: 500 })
