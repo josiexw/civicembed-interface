@@ -17,7 +17,7 @@ import {
 } from "@/lib/utils"
 import "leaflet/dist/leaflet.css"
 import L from "leaflet"
-import { MapContainer, TileLayer, Rectangle, Tooltip, useMap } from "react-leaflet"
+import { MapContainer, TileLayer, Rectangle, Tooltip, useMap, useMapEvents } from "react-leaflet"
 
 interface GridCell {
   lat: number
@@ -34,10 +34,48 @@ interface BoundingBox {
 }
 
 interface BackendResponse {
-  boundingBox: BoundingBox
   topKCells: BoundingBox[]
   similarities: number[]
   lensSimilarity: Record<string, number>[]
+}
+
+function BoundingBoxSelector({ onSelect }: { onSelect: (bounds: BoundingBox) => void }) {
+  const map = useMapEvents({
+    contextmenu(e) {
+      if (!selecting.current) {
+        // First right-click → start
+        startPoint.current = e.latlng
+        tempRect.current?.remove()
+        tempRect.current = L.rectangle([[e.latlng.lat, e.latlng.lng], [e.latlng.lat, e.latlng.lng]], {
+          color: "yellow",
+          weight: 2,
+          fill: false,
+        }).addTo(map)
+        selecting.current = true
+      } else {
+        // Second right-click → finish
+        if (startPoint.current) {
+          const bounds = L.latLngBounds(startPoint.current, e.latlng)
+          onSelect({
+            north: bounds.getNorth(),
+            south: bounds.getSouth(),
+            east: bounds.getEast(),
+            west: bounds.getWest(),
+          })
+        }
+        selecting.current = false
+      }
+    },
+    mousemove(e) {
+      if (!selecting.current || !startPoint.current) return
+      tempRect.current?.setBounds(L.latLngBounds(startPoint.current, e.latlng))
+    },
+  })
+
+  const selecting = useRef(false)
+  const startPoint = useRef<L.LatLng | null>(null)
+  const tempRect = useRef<L.Rectangle | null>(null)
+  return null
 }
 
 function GridCanvasLayer({
@@ -122,11 +160,11 @@ function GridCanvasLayer({
 }
 
 export default function SwitzerlandMap() {
-  const [location, setLocation] = useState("")
+  const [outputSize, setOutputSize] = useState("")
   const [topK, setTopK] = useState("")
   const [lens, setLens] = useState<string[]>([])
   const [highlightedCells, setHighlightedCells] = useState<BoundingBox[]>([])
-  const [boundingBox, setBoundingBox] = useState<BoundingBox | null>(null)
+  const [selectedBounds, setSelectedBounds] = useState<BoundingBox | null>(null)
   const [gridData, setGridData] = useState<GridCell[]>([])
   const [loading, setLoading] = useState(false)
   const [zoom, setZoom] = useState(8)
@@ -159,42 +197,42 @@ export default function SwitzerlandMap() {
     }
   }, [lens])
 
-  const handleSearch = async () => {
-    if (!location || !topK) return
-    setLoading(true)
-    try {
-        const response = await fetch("/api/search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ location, topK: Number.parseInt(topK), lens }),
-        })
-        if (!response.ok) throw new Error("Search request failed")
-        const data: BackendResponse = await response.json()
-        setHighlightedCells(data.topKCells)
-        setBoundingBox(data.boundingBox)
-        setTopKCellsWithSimilarity(
-        data.topKCells.map((box, i) => ({
-            box,
-            similarity: data.similarities[i] ?? 0,
-            lensSimilarity: typeof data.lensSimilarity?.[i] === "object" ? data.lensSimilarity[i] : {},
-        }))
-        )
-        if (data.boundingBox && mapRef.current) {
-            const rawLat = (data.boundingBox.north + data.boundingBox.south) / 2
-            const rawLng = (data.boundingBox.east + data.boundingBox.west) / 2
-            const cLat = Math.max(SWITZERLAND_BOUNDS.south, Math.min(SWITZERLAND_BOUNDS.north, rawLat))
-            const cLng = Math.max(SWITZERLAND_BOUNDS.west, Math.min(SWITZERLAND_BOUNDS.east, rawLng))
-            const targetZoom = 10
-            setCenter({ lat: cLat, lng: cLng })
-            setZoom(targetZoom)
-            mapRef.current.setView([cLat, cLng], targetZoom, { animate: true })
-        }
-    } catch (e) {
-        console.error(e)
-    } finally {
-        setLoading(false)
-    }
+  const handleBoundingBoxSelect = (bounds: BoundingBox) => {
+    setSelectedBounds(bounds)
   }
+
+  const handleSearch = async () => {
+    if (!topK || !selectedBounds) return
+    const bounds = selectedBounds
+    setLoading(true);
+    try {
+      const response = await fetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          boundingBox: bounds,
+          topK: Number.parseInt(topK),
+          outputSize: Number.parseInt(outputSize),
+          lens,
+        }),
+      });
+      if (!response.ok) throw new Error("Search request failed");
+      const data: BackendResponse = await response.json();
+      setHighlightedCells(data.topKCells);
+      setTopKCellsWithSimilarity(
+        data.topKCells.map((box, i) => ({
+          box,
+          similarity: data.similarities[i] ?? 0,
+          lensSimilarity:
+            typeof data.lensSimilarity?.[i] === "object" ? data.lensSimilarity[i] : {},
+        }))
+      );
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadGridData = async (lensList: string[]) => {
     if (!mapRef.current) return
@@ -267,26 +305,51 @@ export default function SwitzerlandMap() {
   return (
     <div className="h-screen flex flex-col">
       <Card className="p-4 m-2">
-        <div className="flex gap-4 items-center flex-wrap">
-          <div className="flex-1 min-w-[200px]">
-            <Input placeholder="Enter location name..." value={location} onChange={(e) => setLocation(e.target.value)} />
+        <div className="grid grid-cols-3 gap-6 items-center w-full">
+          
+          {/* Inputs + Search */}
+          <div className="flex items-center gap-4 w-full">
+            <Input
+              type="number"
+              placeholder="Output Size"
+              value={outputSize}
+              onChange={(e) => setOutputSize(e.target.value)}
+              className="flex-1"
+            />
+            <Input
+              type="number"
+              placeholder="Top K"
+              value={topK}
+              onChange={(e) => setTopK(e.target.value)}
+              className="flex-1"
+            />
+            <Button
+              onClick={handleSearch}
+              disabled={loading || !location || !topK}
+              className="flex-shrink-0"
+            >
+              {loading ? "Searching..." : "Search"}
+            </Button>
           </div>
-          <div className="w-24">
-            <Input type="number" placeholder="Top K" value={topK} onChange={(e) => setTopK(e.target.value)} />
+
+          {/* Lens Selector */}
+          <div className="w-full">
+            <Select
+              isMulti
+              options={lensOptions}
+              placeholder="Select lens"
+              value={lensOptions.filter((o) => lens.includes(o.value))}
+              onChange={(selected) => setLens(selected.map((o) => o.value))}
+              menuPortalTarget={typeof document !== "undefined" ? document.body : null}
+              styles={{
+                menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+                menu: (base) => ({ ...base, zIndex: 9999 }),
+              }}
+            />
           </div>
-          <Button onClick={handleSearch} disabled={loading || !location || !topK}>{loading ? "Searching..." : "Search"}</Button>
-          <Select
-            isMulti
-            options={lensOptions}
-            value={lensOptions.filter((o) => lens.includes(o.value))}
-            onChange={(selected) => setLens(selected.map((o) => o.value))}
-            menuPortalTarget={typeof document !== "undefined" ? document.body : null}
-            styles={{
-              menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-              menu: (base) => ({ ...base, zIndex: 9999 }),
-            }}
-          />
-          <div className="flex gap-2">
+
+          {/* Zoom Controls */}
+          <div className="flex justify-end gap-2 w-full">
             <Button
               variant="outline"
               size="sm"
@@ -339,16 +402,17 @@ export default function SwitzerlandMap() {
                 preferCanvas
             >
             <MapEvents />
+            <BoundingBoxSelector onSelect={handleBoundingBoxSelect} />
             <TileLayer
                 attribution="&copy; OpenStreetMap contributors"
                 url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             <GridCanvasLayer gridCells={gridData} getColor={getCellColor} opacity={0.4} />
-            {boundingBox && (
+            {selectedBounds && (
               <Rectangle
                 bounds={[
-                  [boundingBox.south, boundingBox.west],
-                  [boundingBox.north, boundingBox.east],
+                  [selectedBounds.south, selectedBounds.west],
+                  [selectedBounds.north, selectedBounds.east],
                 ]}
                 pathOptions={{ color: "yellow", weight: 3, fill: false }}
               />
