@@ -75,7 +75,7 @@ export async function GET(request: NextRequest) {
     const fileMap: Record<string, string | null> = {
       topography: "topography.arrow",
       water: "water.arrow",
-      roads: null,
+      roads: "road.arrow",
       vegetation: "vegetation.arrow",
     }
 

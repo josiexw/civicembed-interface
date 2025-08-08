@@ -6,10 +6,10 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export const SWITZERLAND_BOUNDS = {
-  north: 47.8084,
-  south: 45.818,
-  east: 10.4922,
-  west: 5.9559,
+  north: 47.8085,  // Bargen (SH)
+  south: 45.8180,  // Pedrinate (TI)
+  east: 10.4920,   // Val Müstair (GR)
+  west: 5.9559,    // Chancy (GE)
 }
 
 export const lensOptions = [
@@ -62,7 +62,7 @@ export const colormaps = {
     const r = Math.round(255 * value)
     const g = Math.round(255 * value)
     const b = Math.round(255 * (1 - value))
-    return `rgba(${r}, ${g}, ${b}, 0.3)`
+    return `rgba(${r}, ${g}, ${b})`
   },
   summer_r: (value: number) => {
     let r, g, b
@@ -87,7 +87,7 @@ export const colormaps = {
       b = 0
     }
 
-    return `rgba(${r}, ${g}, ${b}, 0.3)`
+    return `rgba(${r}, ${g}, ${b})`
   },
   plasma: (value: number) => {
     let r, g, b
@@ -95,37 +95,30 @@ export const colormaps = {
     if (value <= 0.33) {
       // Orange to Pink
       const t = value / 0.33
-      r = Math.round(255)
-      g = Math.round(165 + t * (105 - 165))  // 165 → 105
-      b = Math.round(0 + t * (180 - 0))      // 0 → 180
+      r = 255
+      g = Math.round(165 + t * (105 - 165))
+      b = Math.round(0 + t * (180 - 0))
     } else if (value <= 0.66) {
       // Pink to Purple
       const t = (value - 0.33) / 0.33
-      r = Math.round(255 - t * (255 - 128))  // 255 → 128
-      g = Math.round(105 - t * 105)          // 105 → 0
-      b = Math.round(180 - t * (180 - 128))  // 180 → 128
+      r = Math.round(255 - t * (255 - 220))
+      g = Math.round(105 - t * 55)
+      b = Math.round(180 - t * (180 - 200))
     } else {
       // Purple to Blue
       const t = (value - 0.66) / 0.34
-      r = Math.round(128 - t * 128)          // 128 → 0
-      g = 0
-      b = Math.round(128 + t * (255 - 128))  // 128 → 255
+      r = Math.round(220 - t * 220)
+      g = Math.round(50 - t * 50)
+      b = Math.round(200 + t * (255 - 200))
     }
 
-    return `rgba(${r}, ${g}, ${b}, 0.3)`
+    return `rgba(${r}, ${g}, ${b})`
   },
   seismic: (value: number) => {
-    if (value < 0.5) {
-      const r = Math.round(255 * (1 - 2 * value))
-      const g = Math.round(255 * (1 - 2 * value))
-      const b = 255
-      return `rgba(${r}, ${g}, ${b}, 0.3)`
-    } else {
-      const r = 255
-      const g = Math.round(255 * (2 - 2 * value))
-      const b = Math.round(255 * (2 - 2 * value))
-      return `rgba(${r}, ${g}, ${b}, 0.3)`
-    }
+    const r = Math.round(255 * (1 - value))
+    const g = 0
+    const b = Math.round(255 * value)
+    return `rgb(${r}, ${g}, ${b})`
   },
   viridis: (value: number) => {
     let r, g, b
@@ -156,6 +149,6 @@ export const colormaps = {
       b = Math.round(130 + t * (128 - 130))
     }
 
-    return `rgba(${r}, ${g}, ${b}, 0.3)`
+    return `rgba(${r}, ${g}, ${b})`
   }
 }
