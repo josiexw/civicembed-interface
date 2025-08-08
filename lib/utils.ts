@@ -68,20 +68,20 @@ export const colormaps = {
     let r, g, b
 
     if (value <= 0.33) {
-      // Orange (255, 165, 0) → Yellow (255, 255, 0)
-      const t = value / 0.5
+      // Orange → Yellow
+      const t = value / 0.33
       r = 255
       g = Math.round(165 + t * (255 - 165))
       b = 0
-    } else if (value <= 0.66) {
-      // Yellow (255, 255, 0) → Green (0, 255, 0)
-      const t = (value - 0.33) / 0.33
+    } else if (value <= 0.85) {
+      // Yellow → Bright Green
+      const t = (value - 0.33) / 0.58
       r = Math.round(255 * (1 - t))
       g = 255
       b = 0
     } else {
-      // Green (0, 255, 0) → Dark Green (0, 100, 0)
-      const t = (value - 0.66) / 0.33
+      // Bright Green → Dark Green
+      const t = (value - 0.85) / 0.15
       r = 0
       g = Math.round(255 - t * (255 - 100))
       b = 0

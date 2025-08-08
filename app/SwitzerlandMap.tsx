@@ -343,7 +343,7 @@ export default function SwitzerlandMap() {
                 attribution="&copy; OpenStreetMap contributors"
                 url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-            <GridCanvasLayer gridCells={gridData} getColor={getCellColor} opacity={0.5} />
+            <GridCanvasLayer gridCells={gridData} getColor={getCellColor} opacity={0.4} />
             {boundingBox && (
               <Rectangle
                 bounds={[
